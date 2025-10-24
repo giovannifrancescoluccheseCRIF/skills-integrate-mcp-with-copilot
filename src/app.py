@@ -5,21 +5,35 @@ A super simple FastAPI application that allows students to view and sign up
 for extracurricular activities at Mergington High School.
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 import os
 from pathlib import Path
+import json
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+import secrets
 
 app = FastAPI(title="Mergington High School API",
               description="API for viewing and signing up for extracurricular activities")
+security = HTTPBasic()
 
 # Mount the static files directory
 current_dir = Path(__file__).parent
 app.mount("/static", StaticFiles(directory=os.path.join(Path(__file__).parent,
           "static")), name="static")
 
-# In-memory activity database
+def load_users():
+    users_path = os.path.join(Path(__file__).parent, "users.json")
+    with open(users_path, "r") as f:
+        return json.load(f)
+
+def is_teacher(credentials: HTTPBasicCredentials = Depends(security)):
+    users = load_users()
+    for teacher in users["teachers"]:
+        if teacher["username"] == credentials.username and secrets.compare_digest(teacher["password"], credentials.password):
+            return True
+    raise HTTPException(status_code=401, detail="Unauthorized: Only teachers can register/unregister students.")
 activities = {
     "Chess Club": {
         "description": "Learn strategies and compete in chess tournaments",
@@ -89,7 +103,8 @@ def get_activities():
 
 
 @app.post("/activities/{activity_name}/signup")
-def signup_for_activity(activity_name: str, email: str):
+def signup_for_activity(activity_name: str, email: str, credentials: HTTPBasicCredentials = Depends(security)):
+    is_teacher(credentials)
     """Sign up a student for an activity"""
     # Validate activity exists
     if activity_name not in activities:
@@ -111,7 +126,8 @@ def signup_for_activity(activity_name: str, email: str):
 
 
 @app.delete("/activities/{activity_name}/unregister")
-def unregister_from_activity(activity_name: str, email: str):
+def unregister_from_activity(activity_name: str, email: str, credentials: HTTPBasicCredentials = Depends(security)):
+    is_teacher(credentials)
     """Unregister a student from an activity"""
     # Validate activity exists
     if activity_name not in activities:
